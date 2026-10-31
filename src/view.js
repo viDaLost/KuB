@@ -99,6 +99,11 @@ export class CubeView {
 
   rebuild(model = this.model) {
     this.model = model;
+    // CSS3DObject receives no removed event when only its ancestor Group is
+    // detached. Remove its DOM explicitly before replacing the cubie groups.
+    if (this.cssMode) this.root.traverse(object => {
+      if (object.isCSS3DObject) object.element.remove();
+    });
     this.root.clear();
     this.meshes.clear();
     this.root.scale.setScalar(3.1 / model.size);

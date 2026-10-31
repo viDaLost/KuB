@@ -18,7 +18,7 @@ const state = {
   mode: saved.mode === 'free' ? 'free' : 'learn',
   lessonIndex: 0, step: 0, history: [], redo: [],
   busy: false, playing: false, operation: null, solution: null, solutionStep: 0, solutionSource: 'history',
-  prime: false, double: false, layer: 'outer', turnMode: false,
+  prime: false, double: false, layer: 'outer',
   progress: read('kub.progress', {}), records: read('kub.records', []),
   running: false, elapsed: 0, started: 0, attempt: false, assisted: false,
 };
@@ -37,28 +37,30 @@ $('#app').innerHTML = `
       <button class="nav-item" data-mode="free">${icon('explore')}<span>Свободная сборка</span></button>
       <button class="nav-item" id="algorithms-open">${icon('list')}<span>Алгоритмы</span></button>
     </nav>
-    <div class="header-tools"><span class="local-badge"><span></span>Твой прогресс сохраняется</span><button class="icon-button" id="settings-open" aria-label="Настройки">${icon('settings')}</button><button class="help-button" id="help-open" aria-label="Как пользоваться">?</button></div>
+    <div class="header-tools"><span class="local-badge"><span></span>Прогресс сохранён</span><button class="icon-button" id="journey-open" aria-label="Маршрут обучения и рекорды" title="Маршрут и рекорды">${icon('trophy')}</button><button class="icon-button" id="settings-open" aria-label="Настройки">${icon('settings')}</button><button class="help-button" id="help-open" aria-label="Как пользоваться">?</button></div>
   </header>
   <main class="main">
-    <section class="intro"><div><div class="eyebrow"><span class="tiny-square"></span> МАЛЕНЬКИЕ ШАГИ. БОЛЬШИЕ ПОБЕДЫ.</div><h1>Всё сложится<span>.</span></h1><p>Крути, пробуй, понимай. Один поворот за другим.</p></div><div class="intro-note"><span>Без спешки.<br>В твоём темпе.</span><svg viewBox="0 0 100 60" fill="none" aria-hidden="true"><path d="M6 7c18 46 47 42 80 23M70 27l19 1-8 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div></section>
+    <h1 class="sr-only">КуБ — 3D-тренажёр сборки кубика</h1>
     <section class="workspace" aria-label="Тренажёр кубика">
       <div class="simulator">
         <div class="cube-toolbar"><div class="cube-choice"><span class="toolbar-label">Твой кубик</span><div class="size-picker" role="group" aria-label="Размер кубика">${[2, 3, 4, 5].map(n => `<button data-size="${n}" aria-label="Кубик ${n} на ${n}">${n}×${n}</button>`).join('')}</div></div><span class="level-badge" id="level-badge">КЛАССИКА</span></div>
         <div class="stage">
-          <div class="stage-top"><div class="view-mode" role="group" aria-label="Способ управления"><button data-view-mode="orbit" class="active" title="Перетаскивание вращает камеру">${icon('hand')}<span>Обзор</span></button><button data-view-mode="turn" title="Смахивание по наклейке вращает слой">${icon('cube')}<span>Слои</span></button></div><span class="stage-status" id="stage-status"><span></span>Учебный случай</span></div>
+          <div class="stage-top"><span class="stage-status" id="stage-status"><span></span>Учебный случай</span></div>
           <span class="stage-watermark" aria-hidden="true">3×3</span><div class="cube-canvas" id="cube-canvas"></div><div class="cube-shadow" aria-hidden="true"></div>
           <div class="stage-tools"><button class="glass-button" id="camera-home" aria-label="Вернуть вид камеры" title="Вернуть вид камеры">${icon('focus')}</button><button class="glass-button" id="zoom-in" aria-label="Приблизить" title="Приблизить">${icon('plus')}</button><button class="glass-button" id="zoom-out" aria-label="Отдалить" title="Отдалить">${icon('minus')}</button><span></span><button class="glass-button" id="net-toggle" aria-label="Показать развёртку" aria-pressed="false" title="Развёртка">${icon('net')}</button></div>
-          <div class="stage-bottom"><span id="gesture-hint">${icon('explore')} Вращай, чтобы рассмотреть</span><span class="orientation-hint"><i style="--dot:${COLORS.U}"></i>верх<i style="--dot:${COLORS.F}"></i>перед</span></div>
+          <div class="stage-bottom"><span id="gesture-hint">${icon('hand')} На кубике — поворот слоя<span class="hint-divider">·</span>Вне кубика — вращение</span><span class="orientation-hint"><i style="--dot:${COLORS.U}"></i>верх<i style="--dot:${COLORS.F}"></i>перед</span></div>
+          <div class="panel-switches"><button class="edge-button" id="controls-toggle" aria-label="Кнопки поворотов" aria-expanded="false" aria-controls="move-panel">${icon('keyboard')}<span>Кнопки</span></button><button class="edge-button" id="coach-toggle" aria-expanded="false" aria-controls="coach">${icon('book')}<span>Урок</span></button></div>
+          <div class="quick-lesson"><button class="glass-button" id="quick-play" aria-label="Показать алгоритм" title="Показать / приостановить">${icon('play')}</button><button class="glass-button" id="quick-step" aria-label="Следующий ход" title="Следующий ход · Пробел">${icon('chevron')}</button></div>
           <div id="cube-net" class="cube-net" hidden></div><div class="solved-stamp" id="solved-stamp" hidden>${icon('check')} Всё сложилось!</div>
         </div>
-        <div class="move-panel">
+        <div class="move-panel" id="move-panel">
           <div class="move-header"><span class="toolbar-label">Управление гранями <button class="text-help" id="notation-open" aria-label="Обозначения ходов">?</button></span><div class="move-modifiers"><select id="layer-select" aria-label="Поворачиваемый слой"><option value="outer">Внешний слой</option><option value="inner">Внутренний · 2R</option><option value="wide">Два слоя · Rw</option></select><button class="modifier" id="prime-toggle" aria-pressed="false" title="Обратные повороты">Обратно <b>′</b></button><button class="modifier" id="double-toggle" aria-pressed="false" title="Половина оборота">×2</button></div></div>
           <div class="face-buttons" role="group" aria-label="Повороты граней">${['U', 'D', 'L', 'R', 'F', 'B'].map(face => `<button class="face-button" data-face="${face}" title="${face} — ${ { U: 'верхняя', D: 'нижняя', L: 'левая', R: 'правая', F: 'передняя', B: 'задняя' }[face]} грань"><span class="face-color" style="--face-color:${COLORS[face]}"></span><b>${face}</b><span class="face-direction">↻</span></button>`).join('')}</div>
           <div class="history-line"><span class="history-label">ХОДЫ</span><div id="history" class="history-tokens" aria-label="История ходов">Твой первый ход — впереди</div><span class="move-count" id="move-count">0</span></div>
-          <div class="cube-actions"><div class="undo-actions"><button class="icon-button" id="undo" aria-label="Отменить ход" title="Отменить · Ctrl+Z">${icon('undo')}</button><button class="icon-button" id="redo" aria-label="Повторить ход" title="Повторить · Ctrl+Y">${icon('redo')}</button></div><div class="right-actions"><button class="subtle-button" id="reset">${icon('reset')}<span>Сначала</span></button><button class="subtle-button" id="scramble">${icon('shuffle')}<span>Перемешать</span></button></div></div>
+          <div class="cube-actions"><div class="undo-actions"><button class="icon-button" id="undo" aria-label="Отменить ход" title="Отменить · Ctrl+Z">${icon('undo')}</button><button class="icon-button" id="redo" aria-label="Повторить ход" title="Повторить · Ctrl+Y">${icon('redo')}</button></div><div class="right-actions"><button class="subtle-button" id="reset" aria-label="Начать сначала">${icon('reset')}<span>Сначала</span></button><button class="subtle-button" id="scramble" aria-label="Перемешать кубик">${icon('shuffle')}<span>Перемешать</span></button></div></div>
         </div>
       </div>
-      <aside class="sidebar"><div class="coach-card" id="coach"></div><div class="shortcut-note">${icon('keyboard')}<span>Поворачивай клавишами <b>R U F…</b><br><kbd>Shift</kbd> — обратно · <kbd>Пробел</kbd> — следующий ход</span></div></aside>
+      <aside class="sidebar" aria-label="Обучение и практика"><button class="icon-button" id="coach-close" aria-label="Свернуть панель">${icon('close')}</button><div class="coach-card" id="coach"></div></aside>
     </section>
     <section id="journey" class="journey"></section>
     <footer class="footer"><span class="footer-brand">КуБ<span>.</span> <span>Всё начинается с одного поворота.</span></span><button class="footer-help" id="footer-help">Как это работает ${icon('arrow')}</button><span class="footer-small">Без регистрации. В своём темпе.</span></footer>
@@ -131,7 +133,7 @@ function drawCoach() {
       <div class="practice-stats"><div><span>Ходы</span><b id="practice-moves">${state.userMoves || 0}</b></div><div><span>Лучшее время</span><b>${best === null ? '—' : formatTime(best)}</b></div></div>
       <div class="practice-body"><h3>Нужна подсказка?</h3><p class="lesson-goal">Посмотри решение по одному ходу или запусти всю последовательность.</p>
       ${solution ? `<div class="solution-meta"><span>${state.solutionSource === 'solver' ? 'Решение кубика' : 'Возврат по истории'}</span><b>${state.solutionStep} / ${solution.length}</b></div><div class="algorithm-chips solution-chips">${solution.map((m, i) => `<span class="algorithm-chip ${i < state.solutionStep ? 'done' : i === state.solutionStep ? 'current' : ''}">${escape(m)}</span>`).join('')}</div><div class="lesson-playback"><button class="primary-button" id="solution-play">${icon(state.playing ? 'pause' : 'play')}<span>${state.playing ? 'Пауза' : 'Показать решение'}</span></button><button class="square-button" id="solution-step" aria-label="Следующий ход решения">${icon('chevron')}</button></div>` : `<button class="primary-button solve-button" id="solve">${icon('bulb')}<span>Найти решение</span>${icon('arrow')}</button>`}
-      <div class="manual-algorithm"><label for="algorithm-input">Или введи свою формулу</label><form id="algorithm-form"><input id="algorithm-input" name="algorithm" placeholder="R U R' U'" autocomplete="off" spellcheck="false" aria-label="Своя формула" maxlength="1000"><button class="square-button" type="submit" aria-label="Выполнить формулу">${icon('arrow')}</button></form>${state.operation === 'algorithm' ? `<button class="subtle-button" id="algorithm-stop">${icon('pause')} Остановить формулу</button>` : ''}</div><div class="lesson-tip">${icon('bulb')}<p>${state.size === 3 ? 'Для 3×3 решение рассчитывается отдельно. На других размерах тренажёр возвращает кубик по истории ходов.' : 'Включи «Слои» над кубиком и смахни по наклейке. Внутренние слои также доступны в меню управления.'} Подсказки не попадают в рекорды.</p></div></div>`;
+      <div class="manual-algorithm"><label for="algorithm-input">Или введи свою формулу</label><form id="algorithm-form"><input id="algorithm-input" name="algorithm" placeholder="R U R' U'" autocomplete="off" spellcheck="false" aria-label="Своя формула" maxlength="1000"><button class="square-button" type="submit" aria-label="Выполнить формулу">${icon('arrow')}</button></form>${state.operation === 'algorithm' ? `<button class="subtle-button" id="algorithm-stop">${icon('pause')} Остановить формулу</button>` : ''}</div><div class="lesson-tip">${icon('bulb')}<p>${state.size === 3 ? 'Для 3×3 решение рассчитывается отдельно. На других размерах тренажёр возвращает кубик по истории ходов.' : 'Смахни по нужному ряду прямо на кубике, чтобы повернуть слой. Нажатие поворачивает грань; долгое нажатие — обратно.'} Подсказки не попадают в рекорды.</p></div></div>`;
     $('#solve')?.addEventListener('click', findSolution);
     $('#solution-play')?.addEventListener('click', playSolution);
     $('#solution-step')?.addEventListener('click', () => perform(state.solution[state.solutionStep], 'solution'));
@@ -166,14 +168,22 @@ function drawStatus() {
   $('#solved-stamp').hidden = !solved || (state.mode === 'learn' && !complete());
   $('#stage-status').innerHTML = `<span></span>${state.busy && !state.playing ? 'Поворот за поворотом' : state.mode === 'learn' ? complete() ? 'Урок пройден' : 'Учебный случай' : solved ? 'Кубик собран' : 'Свободная сборка'}`;
   if ($('#practice-moves')) $('#practice-moves').textContent = state.userMoves || 0;
+  $('#coach-toggle span').textContent = state.mode === 'learn' ? complete() ? 'Урок пройден' : `Ход ${lessonMoves()[state.step]}` : 'Практика';
+  const canAdvance = state.mode === 'learn' ? !complete() : state.solution && state.solutionStep < state.solution.length;
+  $('.quick-lesson').hidden = !canAdvance;
+  $('#quick-play').innerHTML = icon(state.playing ? 'pause' : 'play');
+  $('#quick-play').setAttribute('aria-label', state.playing ? 'Приостановить показ' : 'Показать алгоритм');
   drawNet(); syncDisabled(); persist();
 }
 
 function syncDisabled() {
-  for (const el of $$('[data-size], [data-mode], [data-lesson], [data-face], #lesson-select, #reset, #scramble, #step, #solution-step, #solve, #algorithm-input, #algorithm-form button, #layer-select, #lesson-restart, #next-lesson, #record-scramble')) el.disabled = state.busy;
+  for (const el of $$('[data-size], [data-mode], [data-lesson], [data-face], #lesson-select, #reset, #scramble, #step, #quick-step, #solution-step, #solve, #algorithm-input, #algorithm-form button, #layer-select, #lesson-restart, #next-lesson, #record-scramble')) el.disabled = state.busy;
+  $('#quick-play').disabled = state.busy && !state.playing;
+  $('#quick-play').innerHTML = icon(state.playing ? 'pause' : 'play');
   $('#undo').disabled = state.busy || !state.history.length;
   $('#redo').disabled = state.busy || !state.redo.length;
   $('#settings-open').disabled = state.busy;
+  $('#journey-open').disabled = state.busy;
   $('#algorithms-open').disabled = state.busy;
   $('#play')?.toggleAttribute('disabled', state.busy && !state.playing);
   $('#solution-play')?.toggleAttribute('disabled', state.busy && !state.playing);
@@ -372,7 +382,7 @@ function modal(title, content, eyebrow = 'ПОЛЕЗНО ЗНАТЬ') {
 }
 
 function showHelp() {
-  modal('Один поворот — и всё понятнее.', `<p>Выбери размер кубика и режим. В обучении каждый урок открывает отдельный подготовленный случай. Повторяй подсказанные ходы кнопками или смотри анимацию по шагам.</p><div class="help-grid"><div>${icon('hand')}<h3>Рассмотри</h3><p>В режиме «Обзор» перетаскивай кубик для вращения камеры. Масштаб меняется колёсиком, щипком или кнопками + и −.</p></div><div>${icon('cube')}<h3>Поверни</h3><p>Включи «Слои» и смахни по наклейке. Кнопки под кубиком всегда выполняют точный ход независимо от камеры.</p></div></div><h3>Как читать формулы</h3><div class="notation-grid">${[['U', 'Верхняя'], ['D', 'Нижняя'], ['R', 'Правая'], ['L', 'Левая'], ['F', 'Передняя'], ['B', 'Задняя']].map(([f, name]) => `<div><b style="--face-color:${COLORS[f]}">${f}</b><span>${name}</span></div>`).join('')}</div><p><b>R</b> — 90° по часовой стрелке, если смотреть прямо на правую грань снаружи. <b>R′</b> — 90° обратно. <b>R2</b> — 180°. <b>Rw</b> — два правых слоя вместе. <b>2R</b> — только второй слой справа.</p><p>Буквы привязаны к исходным осям кубика: жёлтый центр — U, зелёный — F. Поворот камеры их не меняет. Кнопка ${icon('focus')} возвращает исходный вид.</p><h3>Клавиатура</h3><p><kbd>R</kbd> <kbd>U</kbd> <kbd>F</kbd> <kbd>D</kbd> <kbd>L</kbd> <kbd>B</kbd> — повороты; <kbd>Shift</kbd> — обратно; <kbd>Пробел</kbd> — следующий ход урока или решения; <kbd>Ctrl/⌘ + Z</kbd> — отмена; <kbd>Ctrl/⌘ + Y</kbd> — повтор.</p><p class="muted">Рекорды и пройденные уроки хранятся только в этом браузере. Очистка данных браузера удалит их. Время считается с первого хода после перемешивания. Решение с подсказками, формулой или отменой не записывается как рекорд.</p>`);
+  modal('Один поворот — и всё понятнее.', `<p>Выбери размер кубика и режим. В обучении каждый урок открывает отдельный подготовленный случай. Повторяй подсказанные ходы кнопками или смотри анимацию по шагам.</p><div class="help-grid"><div>${icon('hand')}<h3>Рассмотри</h3><p>Перетаскивай пустое поле вне кубика — весь кубик повернётся. Масштаб меняется колёсиком, щипком двумя пальцами или кнопками + и −.</p></div><div>${icon('cube')}<h3>Поверни</h3><p>Смахни прямо по кубику — повернётся выбранный ряд. Нажми на грань — она повернётся на 90°. Долгое нажатие, Shift + клик или правая кнопка мыши поворачивают обратно. Внутренние слои тоже реагируют на свайпы.</p></div></div><h3>Как читать формулы</h3><div class="notation-grid">${[['U', 'Верхняя'], ['D', 'Нижняя'], ['R', 'Правая'], ['L', 'Левая'], ['F', 'Передняя'], ['B', 'Задняя']].map(([f, name]) => `<div><b style="--face-color:${COLORS[f]}">${f}</b><span>${name}</span></div>`).join('')}</div><p><b>R</b> — 90° по часовой стрелке, если смотреть прямо на правую грань снаружи. <b>R′</b> — 90° обратно. <b>R2</b> — 180°. <b>Rw</b> — два правых слоя вместе. <b>2R</b> — только второй слой справа.</p><p>Буквы привязаны к исходным осям кубика: жёлтый центр — U, зелёный — F. Поворот камеры их не меняет. Кнопка ${icon('focus')} возвращает исходный вид.</p><h3>Клавиатура</h3><p><kbd>R</kbd> <kbd>U</kbd> <kbd>F</kbd> <kbd>D</kbd> <kbd>L</kbd> <kbd>B</kbd> — повороты; <kbd>Shift</kbd> — обратно; <kbd>Пробел</kbd> — следующий ход урока или решения; <kbd>Ctrl/⌘ + Z</kbd> — отмена; <kbd>Ctrl/⌘ + Y</kbd> — повтор.</p><p class="muted">Рекорды и пройденные уроки хранятся только в этом браузере. Очистка данных браузера удалит их. Время считается с первого хода после перемешивания. Решение с подсказками, формулой или отменой не записывается как рекорд.</p>`);
 }
 
 function showSettings() {
@@ -391,10 +401,28 @@ function showAlgorithms() {
   draw(state.size);
 }
 
+function setPanel(name, open) {
+  $('.workspace').classList.toggle(`${name}-open`, open);
+  $(`#${name}-toggle`).setAttribute('aria-expanded', open);
+}
+$('#coach-toggle').addEventListener('click', () => setPanel('coach', !$('.workspace').classList.contains('coach-open')));
+$('#controls-toggle').addEventListener('click', () => setPanel('controls', !$('.workspace').classList.contains('controls-open')));
+$('#coach-close').addEventListener('click', () => setPanel('coach', false));
+$('#quick-step').addEventListener('click', () => {
+  if (state.mode === 'learn') perform(lessonMoves()[state.step], 'lesson');
+  else if (state.solution) perform(state.solution[state.solutionStep], 'solution');
+});
+$('#quick-play').addEventListener('click', () => state.mode === 'learn' ? playLesson() : playSolution());
+$('#journey-open').addEventListener('click', () => {
+  modal(state.mode === 'learn' ? 'Твой маршрут.' : 'Твои сборки.', `<div class="route-modal">${$('#journey').innerHTML}</div>`, 'ШАГ ЗА ШАГОМ');
+  $$('[data-lesson]', $('#dialog-content')).forEach(button => button.addEventListener('click', () => { $('#dialog').close(); loadLesson(Number(button.dataset.lesson)); }));
+  $('#record-scramble', $('#dialog-content'))?.addEventListener('click', () => { $('#dialog').close(); shuffleCube(); });
+});
+
 $$('[data-mode]').forEach(button => button.addEventListener('click', () => changeMode(button.dataset.mode)));
 $$('[data-size]').forEach(button => button.addEventListener('click', () => changeSize(Number(button.dataset.size))));
 $$('[data-face]').forEach(button => button.addEventListener('click', () => perform(moveForFace(button.dataset.face))));
-$$('[data-view-mode]').forEach(button => button.addEventListener('click', () => { state.turnMode = button.dataset.viewMode === 'turn'; view.setDragMode(state.turnMode); $$('[data-view-mode]').forEach(b => b.classList.toggle('active', b === button)); $('#gesture-hint').innerHTML = `${icon(state.turnMode ? 'hand' : 'explore')} ${state.turnMode ? 'Смахни по наклейке для поворота' : 'Вращай, чтобы рассмотреть'}`; }));
+
 $('#prime-toggle').addEventListener('click', () => { state.prime = !state.prime; if (state.prime) state.double = false; drawModifiers(); });
 $('#double-toggle').addEventListener('click', () => { state.double = !state.double; if (state.double) state.prime = false; drawModifiers(); });
 $('#layer-select').addEventListener('change', e => { state.layer = e.target.value; drawModifiers(); });
@@ -421,10 +449,14 @@ document.addEventListener('keydown', e => {
   else if (FACES.includes(e.key.toUpperCase())) perform(moveForFace(e.key.toUpperCase(), { prime: e.shiftKey || state.prime }));
 });
 
+setPanel('coach', false);
 try {
   if (state.mode === 'learn') model.move(inverse(lessonMoves()));
   else if (Array.isArray(saved.history) && saved.history.length < 10000) { try { model.move(saved.history); state.history = [...saved.history]; } catch { model.reset(); } }
-  view = new CubeView($('#cube-canvas'), model, token => perform(token));
+  view = new CubeView($('#cube-canvas'), model, (token, gesture) => {
+    if (gesture?.kind === 'tap') token = token[0] + (state.double ? '2' : state.prime || gesture.reverse ? "'" : '');
+    perform(token);
+  });
   if (preferences.labels) view.setLabels(true);
   $('#cube-canvas').addEventListener('context-lost', () => toast('3D-контекст прерван. Обнови страницу, чтобы восстановить кубик.'));
 } catch (error) {

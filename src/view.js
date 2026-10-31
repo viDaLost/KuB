@@ -40,15 +40,16 @@ export class CubeView {
       this.renderer = new CSS3DRenderer();
       this.renderer.domElement.classList.add('css-cube-renderer');
     }
-    this.renderer.domElement.setAttribute('aria-label', 'Интерактивный 3D-кубик. Вращайте камеру перетаскиванием. Для ходов используйте кнопки под кубиком.');
+    this.renderer.domElement.setAttribute('aria-label', '3D-кубик. Свайп по кубику поворачивает слой. Нажатие на грань поворачивает её на 90 градусов. Перетаскивание вне кубика вращает весь кубик.');
     this.renderer.domElement.setAttribute('role', 'img');
     container.append(this.renderer.domElement);
-    this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-    this.controls.enableDamping = true;
-    this.controls.dampingFactor = 0.12;
+    this.inputElement = container.parentElement;
+    this.renderer.domElement.style.cursor = 'inherit';
+    this.controls = new OrbitControls(this.camera, this.inputElement);
+    this.controls.enableDamping = false;
     this.controls.enablePan = false;
     this.controls.minDistance = 6;
-    this.controls.maxDistance = 16;
+    this.controls.maxDistance = 24;
     this.controls.rotateSpeed = 0.65;
     this.controls.target.set(0, 0.05, 0);
     this.controls.addEventListener('change', () => this.requestRender());
@@ -70,10 +71,13 @@ export class CubeView {
     this.resizeObserver.observe(container);
     this.frameId = null;
     this.raycaster = new THREE.Raycaster();
-    this.dragMode = false;
-    this.renderer.domElement.addEventListener('pointerdown', e => this.pointerDown(e), { capture: true });
-    this.renderer.domElement.addEventListener('pointerup', e => this.pointerUp(e));
-    this.renderer.domElement.addEventListener('pointercancel', () => this.cancelDrag());
+    this.pointers = new Map();
+    this.inputElement.addEventListener('pointerdown', e => this.pointerDown(e), { capture: true });
+    this.inputElement.addEventListener('pointermove', e => this.pointerMove(e), { capture: true });
+    this.inputElement.addEventListener('pointerup', e => this.pointerUp(e));
+    this.inputElement.addEventListener('pointercancel', e => { this.pointers.delete(e.pointerId); this.cancelDrag(); });
+    this.inputElement.addEventListener('contextmenu', e => e.preventDefault());
+    window.addEventListener('blur', () => { this.pointers.clear(); this.cancelDrag(); });
     this.renderer.domElement.addEventListener('webglcontextlost', e => {
       e.preventDefault();
       container.dispatchEvent(new CustomEvent('context-lost'));
@@ -110,7 +114,9 @@ export class CubeView {
     for (const cubie of model.cubies) {
       const group = new THREE.Group();
       group.position.set(...cubie.pos.map(v => v / 2));
-      group.add(new THREE.Mesh(this.bodyGeometry, this.bodyMaterial));
+      const body = new THREE.Mesh(this.bodyGeometry, this.bodyMaterial);
+      body.userData.cubieId = cubie.id;
+      group.add(body);
       if (this.cssMode) for (const face of FACES) {
         const normal = NORMALS[face];
         const sticker = cubie.stickers.find(s => s.normal.every((v, i) => v === normal[i]));
@@ -144,13 +150,17 @@ export class CubeView {
   }
 
   setLabels(value) { this.labels = value; this.rebuild(); }
-  setDragMode(value) { this.dragMode = value; this.container.classList.toggle('turn-mode', value); }
 
   resize() {
     const { width, height } = this.container.getBoundingClientRect();
     if (!width || !height) return;
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
+    const distance = Math.max(8.8, 8.5 / this.camera.aspect);
+    const zoomRatio = this.fitDistance ? this.camera.position.distanceTo(this.controls.target) / this.fitDistance : 1;
+    this.fitDistance = distance;
+    this.camera.position.sub(this.controls.target).normalize().multiplyScalar(distance * zoomRatio).add(this.controls.target);
+    this.controls.update();
     this.renderer.setSize(width, height);
     this.requestRender();
   }
@@ -165,8 +175,8 @@ export class CubeView {
   }
 
   home() {
-    this.camera.position.set(6.6, 5.2, 7.8);
     this.controls.target.set(0, 0.05, 0);
+    this.camera.position.set(6.6, 5.2, 7.8).normalize().multiplyScalar(this.fitDistance || 8.8).add(this.controls.target);
     this.controls.update(); this.requestRender();
   }
   zoom(direction) { this.camera.position.multiplyScalar(direction > 0 ? 0.9 : 1.1); this.controls.update(); this.requestRender(); }
@@ -205,24 +215,71 @@ export class CubeView {
     this.requestRender();
   }
 
-  pointerDown(event) {
-    if (!this.dragMode || this.animating || !this.onSwipe || event.button !== 0) return;
+  hitAt(x, y) {
+    this.scene.updateMatrixWorld(true);
     const rect = this.renderer.domElement.getBoundingClientRect();
-    this.raycaster.setFromCamera(new THREE.Vector2((event.clientX - rect.left) / rect.width * 2 - 1, -(event.clientY - rect.top) / rect.height * 2 + 1), this.camera);
-    const hit = this.raycaster.intersectObject(this.root, true).find(h => h.object.userData.sticker);
+    this.raycaster.setFromCamera(new THREE.Vector2((x - rect.left) / rect.width * 2 - 1, -(y - rect.top) / rect.height * 2 + 1), this.camera);
+    return this.raycaster.intersectObject(this.root, true).find(h => h.object.userData.cubieId !== undefined);
+  }
+
+  pointerDown(event) {
+    if (event.target.closest('button, select, input, summary, .move-panel')) { event.stopPropagation(); return; }
+    if (![0, 2].includes(event.button)) return;
+    this.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (this.pointers.size > 1) {
+      this.drag = null;
+      this.controls.enabled = false;
+      const [a, b] = [...this.pointers.values()];
+      this.pinch = { distance: Math.hypot(a.x - b.x, a.y - b.y), cameraDistance: this.camera.position.distanceTo(this.controls.target) };
+      this.inputElement.setPointerCapture(event.pointerId);
+      return;
+    }
+    const hit = this.hitAt(event.clientX, event.clientY);
     if (!hit) return;
+    // Capture on the cube before OrbitControls sees pointerdown. The camera
+    // therefore never starts an orbit for the same swipe that turns a layer.
     this.controls.enabled = false;
-    this.renderer.domElement.setPointerCapture(event.pointerId);
-    const normal = Z.clone().applyQuaternion(hit.object.getWorldQuaternion(new THREE.Quaternion()));
-    normal.set(...normal.toArray().map(Math.round));
-    this.drag = { x: event.clientX, y: event.clientY, id: event.pointerId, cubieId: hit.object.userData.cubieId, normal, point: hit.point };
+    this.inputElement.setPointerCapture(event.pointerId);
+    if (this.animating) return;
+    const normal = hit.face.normal.clone().applyMatrix3(new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld)).normalize();
+    const axis = normal.toArray().map(Math.abs).indexOf(Math.max(...normal.toArray().map(Math.abs)));
+    const sign = Math.sign(normal.getComponent(axis));
+    normal.set(0, 0, 0).setComponent(axis, sign);
+    this.drag = { x: event.clientX, y: event.clientY, id: event.pointerId, cubieId: hit.object.userData.cubieId, normal, point: hit.point, button: event.button, started: performance.now() };
+    this.inputElement.style.cursor = 'grabbing';
+  }
+
+  pointerMove(event) {
+    if (this.pointers.has(event.pointerId)) this.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (this.drag?.id === event.pointerId) this.drag.moved = Math.max(this.drag.moved || 0, Math.hypot(event.clientX - this.drag.x, event.clientY - this.drag.y));
+    if (this.pinch && this.pointers.size > 1) {
+      const [a, b] = [...this.pointers.values()];
+      const length = Math.max(1, Math.hypot(a.x - b.x, a.y - b.y));
+      const distance = THREE.MathUtils.clamp(this.pinch.cameraDistance * this.pinch.distance / length, this.controls.minDistance, this.controls.maxDistance);
+      this.camera.position.sub(this.controls.target).normalize().multiplyScalar(distance).add(this.controls.target);
+      this.controls.update(); this.requestRender();
+    } else if (!this.pointers.size && event.pointerType === 'mouse') {
+      this.inputElement.style.cursor = this.hitAt(event.clientX, event.clientY) ? 'pointer' : 'grab';
+    }
   }
 
   pointerUp(event) {
-    if (!this.drag || event.pointerId !== this.drag.id) return;
-    const drag = this.drag; this.cancelDrag();
+    this.pointers.delete(event.pointerId);
+    if (this.pinch) { if (!this.pointers.size) this.cancelDrag(); return; }
+    if (!this.drag || event.pointerId !== this.drag.id) { if (!this.pointers.size) this.cancelDrag(); return; }
+    const drag = this.drag;
+    this.cancelDrag();
     const dx = event.clientX - drag.x, dy = event.clientY - drag.y;
-    if (Math.hypot(dx, dy) < 18 || this.animating) return;
+    if (this.animating || !this.onSwipe) return;
+    if (Math.hypot(dx, dy) < 10) {
+      if (drag.moved >= 10) return;
+      const axis = drag.normal.toArray().findIndex(v => v !== 0);
+      const sign = drag.normal.getComponent(axis);
+      const face = axis === 0 ? sign > 0 ? 'R' : 'L' : axis === 1 ? sign > 0 ? 'U' : 'D' : sign > 0 ? 'F' : 'B';
+      const reverse = event.shiftKey || drag.button === 2 || performance.now() - drag.started > 450;
+      this.onSwipe(face + (reverse ? "'" : ''), { kind: 'tap', reverse });
+      return;
+    }
     const cubie = this.model.cubies.find(c => c.id === drag.cubieId);
     const dimensions = ['x', 'y', 'z'];
     const rect = this.renderer.domElement.getBoundingClientRect();
@@ -243,8 +300,8 @@ export class CubeView {
     const depth = (this.model.size - 1 - Math.abs(pos)) / 2 + 1;
     const face = dimensions[best.axis] === 'x' ? sign > 0 ? 'R' : 'L' : dimensions[best.axis] === 'y' ? sign > 0 ? 'U' : 'D' : sign > 0 ? 'F' : 'B';
     const quarter = best.dot > 0 ? 1 : -1;
-    this.onSwipe((depth > 1 ? depth : '') + face + (quarter === -sign ? '' : "'"));
+    this.onSwipe((depth > 1 ? depth : '') + face + (quarter === -sign ? '' : "'"), { kind: 'swipe' });
   }
 
-  cancelDrag() { this.drag = null; this.controls.enabled = true; }
+  cancelDrag() { this.drag = null; this.pinch = null; this.controls.enabled = true; this.inputElement.style.cursor = 'grab'; }
 }
